@@ -2,53 +2,55 @@
 <html lang="es">
 <head>
 <meta charset="UTF-8">
-<title>Boss Pulpo Alienígena</title>
+<title>Pulpo Alienígena Cooperativo</title>
 <style>
-    html, body {
-        margin: 0;
-        overflow: hidden;
-        background: radial-gradient(circle at center, #050510, #000);
-        font-family: Arial;
-    }
+html, body {
+    margin: 0;
+    overflow: hidden;
+    background: black;
+    font-family: Arial;
+}
 
-    canvas { display: block; }
+canvas { display: block; }
 
-    #ui {
-        position: absolute;
-        top: 10px;
-        left: 50%;
-        transform: translateX(-50%);
-        width: 80%;
-        text-align: center;
-        color: white;
-    }
+#ui {
+    position: absolute;
+    top: 10px;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 80%;
+    text-align: center;
+    color: white;
+    z-index: 10;
+}
 
-    #healthBarContainer {
-        width: 100%;
-        height: 40px;
-        background: #200;
-        border: 3px solid white;
-    }
+#healthBarContainer {
+    width: 100%;
+    height: 40px;
+    background: #200;
+    border: 3px solid white;
+}
 
-    #healthBar {
-        height: 100%;
-        width: 100%;
-        background: linear-gradient(to right, red, orange);
-    }
+#healthBar {
+    height: 100%;
+    width: 100%;
+    background: linear-gradient(to right, red, orange);
+}
 
-    #phaseText {
-        font-size: 24px;
-    }
+#phaseText {
+    font-size: 24px;
+}
 
-    #message {
-        position: absolute;
-        top: 50%;
-        width: 100%;
-        text-align: center;
-        font-size: 60px;
-        color: cyan;
-        text-shadow: 0 0 30px purple;
-    }
+#endScreen {
+    position: absolute;
+    top: 50%;
+    width: 100%;
+    text-align: center;
+    font-size: 50px;
+    color: yellow;
+    text-shadow: 0 0 30px red;
+    display: none;
+}
 </style>
 </head>
 <body>
@@ -58,7 +60,7 @@
     <div id="phaseText">FASE 1</div>
 </div>
 
-<div id="message"></div>
+<div id="endScreen"></div>
 
 <canvas id="game"></canvas>
 
@@ -70,57 +72,81 @@ canvas.width = window.innerWidth;
 canvas.height = window.innerHeight;
 
 // --- CONFIG ---
-let bossMaxHealth = 1000;
+let bossMaxHealth = 1200;
 let bossHealth = bossMaxHealth;
 let phase = 1;
 
 let weakPoints = [];
 let particles = [];
 
+let gameOver = false;
+let startTime = Date.now();
+
 const boss = {
     x: canvas.width / 2,
     y: canvas.height / 2,
-    radius: 120,
-    tentacles: 10,
+    radius: 70,
+    tentacles: 8,
     time: 0,
-    shake: 0
+    shake: 0,
+    exploding: false
 };
 
-// --- GENERAR TENTÁCULOS ---
-function getTentaclePoint(i, t) {
-    const angle = (Math.PI * 2 / boss.tentacles) * i;
+// --- EXPLOSIÓN ---
+let explosionParticles = [];
 
-    let length = 200 + Math.sin(boss.time + i) * 50;
+function explodeBoss() {
+    boss.exploding = true;
+
+    for (let i = 0; i < 200; i++) {
+        explosionParticles.push({
+            x: boss.x,
+            y: boss.y,
+            vx: (Math.random()-0.5)*12,
+            vy: (Math.random()-0.5)*12,
+            life: 1
+        });
+    }
+}
+
+// --- POSICIÓN TENTÁCULO ---
+function getTentaclePoint(i, t) {
+
+    const baseAngle = (Math.PI * 2 / boss.tentacles) * i;
+    const angle = baseAngle + boss.time * 0.03;
+
+    const baseOffset = boss.radius + 15;
+    let maxLength = Math.min(canvas.width, canvas.height) * 0.35;
+
+    let length = baseOffset + t * maxLength;
 
     let x = boss.x + Math.cos(angle) * length;
     let y = boss.y + Math.sin(angle) * length;
 
-    // ondulación
-    x += Math.sin(t + i) * 30;
-    y += Math.cos(t + i) * 30;
+    x += Math.sin(t * 5 + boss.time + i) * 12;
+    y += Math.cos(t * 5 + boss.time + i) * 12;
 
     return {x, y};
 }
 
 // --- PUNTOS DÉBILES ---
 function spawnWeakPoint() {
-    const tentacleIndex = Math.floor(Math.random() * boss.tentacles);
-    const t = Math.random() * 2;
-
-    const pos = getTentaclePoint(tentacleIndex, t);
-
     weakPoints.push({
-        tentacle: tentacleIndex,
-        t: t,
-        radius: 40,
-        life: 1
+        tentacle: Math.floor(Math.random() * boss.tentacles),
+        t: 0.45 + Math.random() * 0.5,
+        radius: 45,
+        life: 3,
+        timer: 0,
+        maxTime: 400
     });
 }
 
-for (let i = 0; i < 5; i++) spawnWeakPoint();
+for (let i = 0; i < 6; i++) spawnWeakPoint();
 
 // --- INPUT ---
 canvas.addEventListener("pointerdown", e => {
+    if (gameOver) return;
+
     const x = e.clientX;
     const y = e.clientY;
 
@@ -132,38 +158,56 @@ canvas.addEventListener("pointerdown", e => {
 
         if (Math.sqrt(dx*dx + dy*dy) < wp.radius) {
             damageBoss(10);
-            wp.life -= 0.5;
-            spawnParticles(pos.x, pos.y);
+            wp.life--;
+
+            for (let i = 0; i < 6; i++) {
+                spawnParticles(pos.x, pos.y);
+            }
         }
     });
 });
 
 // --- DAÑO ---
 function damageBoss(amount) {
-    bossHealth -= amount;
-    boss.shake = 20;
+    if (gameOver) return;
 
-    if (bossHealth < 0) bossHealth = 0;
+    bossHealth -= amount;
+    boss.shake = 15;
+
+    if (bossHealth <= 0) {
+        bossHealth = 0;
+        triggerGameOver();
+    }
 
     updateUI();
     checkPhase();
+}
 
-    if (bossHealth === 0) {
-        document.getElementById("message").innerText = "¡DERROTADO!";
-    }
+// --- GAME OVER ---
+function triggerGameOver() {
+    gameOver = true;
+    explodeBoss();
+
+    const time = ((Date.now() - startTime) / 1000).toFixed(2);
+
+    document.getElementById("endScreen").style.display = "block";
+    document.getElementById("endScreen").innerHTML =
+        "💥 ¡PULPO DERROTADO! 💥<br><br>" +
+        "⏱ Tiempo: " + time + " segundos<br><br>" +
+        "¡Buen trabajo equipo!";
 }
 
 // --- FASES ---
 function checkPhase() {
     let newPhase = 1;
 
-    if (bossHealth < 700) newPhase = 2;
-    if (bossHealth < 400) newPhase = 3;
-    if (bossHealth < 150) newPhase = 4;
+    if (bossHealth < 900) newPhase = 2;
+    if (bossHealth < 600) newPhase = 3;
+    if (bossHealth < 250) newPhase = 4;
 
     if (newPhase !== phase) {
         phase = newPhase;
-        boss.tentacles += 2; // más caos
+        boss.tentacles += 1;
         document.getElementById("phaseText").innerText = "FASE " + phase;
     }
 }
@@ -179,8 +223,8 @@ function spawnParticles(x, y) {
     for (let i = 0; i < 15; i++) {
         particles.push({
             x, y,
-            vx: (Math.random()-0.5)*8,
-            vy: (Math.random()-0.5)*8,
+            vx: (Math.random()-0.5)*5,
+            vy: (Math.random()-0.5)*5,
             life: 1
         });
     }
@@ -193,56 +237,99 @@ function updateParticles() {
         p.life -= 0.02;
 
         ctx.fillStyle = `rgba(0,255,255,${p.life})`;
-        ctx.fillRect(p.x, p.y, 4, 4);
+        ctx.fillRect(p.x, p.y, 3, 3);
 
         if (p.life <= 0) particles.splice(i,1);
     });
 }
 
-// --- DIBUJAR ---
-function drawBoss() {
-    const shakeX = (Math.random()-0.5)*boss.shake;
-    const shakeY = (Math.random()-0.5)*boss.shake;
+// --- EXPLOSIÓN ---
+function updateExplosion() {
+    explosionParticles.forEach((p, i) => {
+        p.x += p.vx;
+        p.y += p.vy;
+        p.life -= 0.02;
 
-    // cuerpo
+        ctx.fillStyle = `rgba(255,100,0,${p.life})`;
+        ctx.fillRect(p.x, p.y, 6, 6);
+
+        if (p.life <= 0) explosionParticles.splice(i,1);
+    });
+}
+
+// --- DIBUJO PULPO ---
+function drawBoss() {
+    if (boss.exploding) return;
+
+    const bx = boss.x + (Math.random()-0.5)*boss.shake;
+    const by = boss.y + (Math.random()-0.5)*boss.shake;
+
+    const bodyColor = "purple";
+
+    for (let i = 0; i < boss.tentacles; i++) {
+
+        const baseAngle = (Math.PI * 2 / boss.tentacles) * i;
+        const angle = baseAngle + boss.time * 0.03;
+
+        const startX = bx + Math.cos(angle) * (boss.radius - 5);
+        const startY = by + Math.sin(angle) * (boss.radius - 5);
+
+        ctx.beginPath();
+        ctx.moveTo(startX, startY);
+
+        for (let t = 0; t <= 1; t += 0.08) {
+            const p = getTentaclePoint(i, t);
+            const thickness = 22 * (1 - t);
+
+            ctx.lineTo(p.x, p.y);
+            ctx.lineWidth = thickness;
+            ctx.strokeStyle = bodyColor;
+            ctx.stroke();
+        }
+    }
+
     ctx.beginPath();
-    ctx.arc(boss.x + shakeX, boss.y + shakeY, boss.radius, 0, Math.PI*2);
-    ctx.fillStyle = "purple";
+    ctx.ellipse(bx, by, boss.radius, boss.radius * 1.1, 0, 0, Math.PI*2);
+    ctx.fillStyle = bodyColor;
     ctx.fill();
 
-    // tentáculos
-    for (let i = 0; i < boss.tentacles; i++) {
-        ctx.beginPath();
-        ctx.moveTo(boss.x, boss.y);
+    ctx.beginPath();
+    ctx.arc(bx - 25, by - 10, 18, 0, Math.PI*2);
+    ctx.arc(bx + 25, by - 10, 18, 0, Math.PI*2);
+    ctx.fillStyle = "white";
+    ctx.fill();
 
-        for (let t = 0; t <= 1; t += 0.1) {
-            const p = getTentaclePoint(i, t + boss.time);
-            ctx.lineTo(p.x, p.y);
-        }
-
-        ctx.strokeStyle = "cyan";
-        ctx.lineWidth = 8;
-        ctx.stroke();
-    }
+    ctx.beginPath();
+    ctx.arc(bx - 25, by - 10, 9, 0, Math.PI*2);
+    ctx.arc(bx + 25, by - 10, 9, 0, Math.PI*2);
+    ctx.fillStyle = "black";
+    ctx.fill();
 
     boss.shake *= 0.9;
 }
 
 // --- PUNTOS DÉBILES ---
 function updateWeakPoints() {
+    if (gameOver) return;
+
     weakPoints.forEach((wp, i) => {
 
-        const pos = getTentaclePoint(wp.tentacle, wp.t + boss.time);
+        wp.timer++;
+
+        const pos = getTentaclePoint(wp.tentacle, wp.t);
 
         wp.radius *= 0.995;
 
         ctx.beginPath();
-        ctx.arc(pos.x, pos.y, wp.radius, 0, Math.PI*2);
+        ctx.arc(pos.x, pos.y, wp.radius, 0, Math.PI * 2);
         ctx.fillStyle = "red";
         ctx.fill();
 
-        if (wp.radius < 10 || wp.life <= 0) {
-            weakPoints.splice(i,1);
+        ctx.strokeStyle = "yellow";
+        ctx.stroke();
+
+        if (wp.timer > wp.maxTime || wp.life <= 0 || wp.radius < 12) {
+            weakPoints.splice(i, 1);
             spawnWeakPoint();
         }
     });
@@ -257,6 +344,7 @@ function update() {
     drawBoss();
     updateWeakPoints();
     updateParticles();
+    updateExplosion();
 
     requestAnimationFrame(update);
 }
@@ -272,7 +360,7 @@ window.addEventListener("resize", () => {
 // --- START ---
 updateUI();
 update();
-
 </script>
+
 </body>
 </html>
