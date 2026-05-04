@@ -2,18 +2,16 @@
 <html lang="es">
 <head>
 <meta charset="UTF-8">
-<title>Jefe Gigante Cooperativo</title>
+<title>Boss Pulpo Alienígena</title>
 <style>
     html, body {
         margin: 0;
         overflow: hidden;
-        background: radial-gradient(circle at center, #111, #000);
-        font-family: Arial, sans-serif;
+        background: radial-gradient(circle at center, #050510, #000);
+        font-family: Arial;
     }
 
-    canvas {
-        display: block;
-    }
+    canvas { display: block; }
 
     #ui {
         position: absolute;
@@ -28,7 +26,7 @@
     #healthBarContainer {
         width: 100%;
         height: 40px;
-        background: #400;
+        background: #200;
         border: 3px solid white;
     }
 
@@ -36,12 +34,10 @@
         height: 100%;
         width: 100%;
         background: linear-gradient(to right, red, orange);
-        transition: width 0.2s;
     }
 
     #phaseText {
         font-size: 24px;
-        margin-top: 5px;
     }
 
     #message {
@@ -50,18 +46,15 @@
         width: 100%;
         text-align: center;
         font-size: 60px;
-        color: yellow;
-        text-shadow: 0 0 20px red;
-        pointer-events: none;
+        color: cyan;
+        text-shadow: 0 0 30px purple;
     }
 </style>
 </head>
 <body>
 
 <div id="ui">
-    <div id="healthBarContainer">
-        <div id="healthBar"></div>
-    </div>
+    <div id="healthBarContainer"><div id="healthBar"></div></div>
     <div id="phaseText">FASE 1</div>
 </div>
 
@@ -79,59 +72,71 @@ canvas.height = window.innerHeight;
 // --- CONFIG ---
 let bossMaxHealth = 1000;
 let bossHealth = bossMaxHealth;
-
 let phase = 1;
 
 let weakPoints = [];
 let particles = [];
-let flashes = [];
 
-const MAX_WEAKPOINTS = 5;
-
-// --- BOSS ---
 const boss = {
     x: canvas.width / 2,
     y: canvas.height / 2,
-    radius: 200,
+    radius: 120,
+    tentacles: 10,
+    time: 0,
     shake: 0
 };
 
-// --- CREAR PUNTOS DÉBILES ---
+// --- GENERAR TENTÁCULOS ---
+function getTentaclePoint(i, t) {
+    const angle = (Math.PI * 2 / boss.tentacles) * i;
+
+    let length = 200 + Math.sin(boss.time + i) * 50;
+
+    let x = boss.x + Math.cos(angle) * length;
+    let y = boss.y + Math.sin(angle) * length;
+
+    // ondulación
+    x += Math.sin(t + i) * 30;
+    y += Math.cos(t + i) * 30;
+
+    return {x, y};
+}
+
+// --- PUNTOS DÉBILES ---
 function spawnWeakPoint() {
-    const angle = Math.random() * Math.PI * 2;
-    const dist = Math.random() * boss.radius * 0.8;
+    const tentacleIndex = Math.floor(Math.random() * boss.tentacles);
+    const t = Math.random() * 2;
+
+    const pos = getTentaclePoint(tentacleIndex, t);
 
     weakPoints.push({
-        x: boss.x + Math.cos(angle) * dist,
-        y: boss.y + Math.sin(angle) * dist,
-        radius: 50 + Math.random() * 30,
-        life: 1,
-        shrinking: true
+        tentacle: tentacleIndex,
+        t: t,
+        radius: 40,
+        life: 1
     });
 }
 
-// Inicial
-for (let i = 0; i < MAX_WEAKPOINTS; i++) spawnWeakPoint();
+for (let i = 0; i < 5; i++) spawnWeakPoint();
 
-// --- INPUT (MULTI IMPACTOS) ---
-canvas.addEventListener("pointerdown", (e) => {
-    handleHit(e.clientX, e.clientY);
-});
+// --- INPUT ---
+canvas.addEventListener("pointerdown", e => {
+    const x = e.clientX;
+    const y = e.clientY;
 
-function handleHit(x, y) {
     weakPoints.forEach(wp => {
-        const dx = x - wp.x;
-        const dy = y - wp.y;
-        const dist = Math.sqrt(dx * dx + dy * dy);
+        const pos = getTentaclePoint(wp.tentacle, wp.t);
 
-        if (dist < wp.radius) {
+        const dx = x - pos.x;
+        const dy = y - pos.y;
+
+        if (Math.sqrt(dx*dx + dy*dy) < wp.radius) {
             damageBoss(10);
             wp.life -= 0.5;
-            spawnParticles(wp.x, wp.y);
-            spawnFlash(wp.x, wp.y);
+            spawnParticles(pos.x, pos.y);
         }
     });
-}
+});
 
 // --- DAÑO ---
 function damageBoss(amount) {
@@ -144,7 +149,7 @@ function damageBoss(amount) {
     checkPhase();
 
     if (bossHealth === 0) {
-        document.getElementById("message").innerText = "¡VICTORIA!";
+        document.getElementById("message").innerText = "¡DERROTADO!";
     }
 }
 
@@ -158,111 +163,102 @@ function checkPhase() {
 
     if (newPhase !== phase) {
         phase = newPhase;
+        boss.tentacles += 2; // más caos
         document.getElementById("phaseText").innerText = "FASE " + phase;
-        spawnExplosion();
-    }
-}
-
-// --- EFECTOS ---
-function spawnParticles(x, y) {
-    for (let i = 0; i < 20; i++) {
-        particles.push({
-            x, y,
-            vx: (Math.random() - 0.5) * 10,
-            vy: (Math.random() - 0.5) * 10,
-            life: 1
-        });
-    }
-}
-
-function spawnFlash(x, y) {
-    flashes.push({x, y, size: 100, life: 1});
-}
-
-function spawnExplosion() {
-    for (let i = 0; i < 100; i++) {
-        spawnParticles(boss.x, boss.y);
     }
 }
 
 // --- UI ---
 function updateUI() {
-    const percent = (bossHealth / bossMaxHealth) * 100;
-    document.getElementById("healthBar").style.width = percent + "%";
+    document.getElementById("healthBar").style.width =
+        (bossHealth / bossMaxHealth * 100) + "%";
 }
 
-// --- LOOP ---
-function update() {
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
-
-    drawBoss();
-    updateWeakPoints();
-    updateParticles();
-    updateFlashes();
-
-    requestAnimationFrame(update);
+// --- PARTÍCULAS ---
+function spawnParticles(x, y) {
+    for (let i = 0; i < 15; i++) {
+        particles.push({
+            x, y,
+            vx: (Math.random()-0.5)*8,
+            vy: (Math.random()-0.5)*8,
+            life: 1
+        });
+    }
 }
 
-// --- DIBUJAR BOSS ---
-function drawBoss() {
-    const shakeX = (Math.random() - 0.5) * boss.shake;
-    const shakeY = (Math.random() - 0.5) * boss.shake;
-
-    ctx.beginPath();
-    ctx.arc(boss.x + shakeX, boss.y + shakeY, boss.radius, 0, Math.PI * 2);
-    ctx.fillStyle = `hsl(${Math.random()*10}, 80%, 40%)`;
-    ctx.fill();
-
-    boss.shake *= 0.9;
-}
-
-// --- PUNTOS DÉBILES ---
-function updateWeakPoints() {
-    weakPoints.forEach((wp, index) => {
-
-        // Animación de latido
-        wp.radius *= 0.995;
-
-        ctx.beginPath();
-        ctx.arc(wp.x, wp.y, wp.radius, 0, Math.PI * 2);
-        ctx.fillStyle = "red";
-        ctx.fill();
-
-        if (wp.radius < 10 || wp.life <= 0) {
-            weakPoints.splice(index, 1);
-            spawnWeakPoint();
-        }
-    });
-}
-
-// --- PARTICULAS ---
 function updateParticles() {
     particles.forEach((p, i) => {
         p.x += p.vx;
         p.y += p.vy;
         p.life -= 0.02;
 
-        ctx.fillStyle = `rgba(255,150,0,${p.life})`;
-        ctx.fillRect(p.x, p.y, 5, 5);
+        ctx.fillStyle = `rgba(0,255,255,${p.life})`;
+        ctx.fillRect(p.x, p.y, 4, 4);
 
-        if (p.life <= 0) particles.splice(i, 1);
+        if (p.life <= 0) particles.splice(i,1);
     });
 }
 
-// --- FLASHES ---
-function updateFlashes() {
-    flashes.forEach((f, i) => {
-        f.size += 10;
-        f.life -= 0.05;
+// --- DIBUJAR ---
+function drawBoss() {
+    const shakeX = (Math.random()-0.5)*boss.shake;
+    const shakeY = (Math.random()-0.5)*boss.shake;
+
+    // cuerpo
+    ctx.beginPath();
+    ctx.arc(boss.x + shakeX, boss.y + shakeY, boss.radius, 0, Math.PI*2);
+    ctx.fillStyle = "purple";
+    ctx.fill();
+
+    // tentáculos
+    for (let i = 0; i < boss.tentacles; i++) {
+        ctx.beginPath();
+        ctx.moveTo(boss.x, boss.y);
+
+        for (let t = 0; t <= 1; t += 0.1) {
+            const p = getTentaclePoint(i, t + boss.time);
+            ctx.lineTo(p.x, p.y);
+        }
+
+        ctx.strokeStyle = "cyan";
+        ctx.lineWidth = 8;
+        ctx.stroke();
+    }
+
+    boss.shake *= 0.9;
+}
+
+// --- PUNTOS DÉBILES ---
+function updateWeakPoints() {
+    weakPoints.forEach((wp, i) => {
+
+        const pos = getTentaclePoint(wp.tentacle, wp.t + boss.time);
+
+        wp.radius *= 0.995;
 
         ctx.beginPath();
-        ctx.arc(f.x, f.y, f.size, 0, Math.PI * 2);
-        ctx.strokeStyle = `rgba(255,255,0,${f.life})`;
-        ctx.lineWidth = 5;
-        ctx.stroke();
+        ctx.arc(pos.x, pos.y, wp.radius, 0, Math.PI*2);
+        ctx.fillStyle = "red";
+        ctx.fill();
 
-        if (f.life <= 0) flashes.splice(i, 1);
+        if (wp.radius < 10 || wp.life <= 0) {
+            weakPoints.splice(i,1);
+            spawnWeakPoint();
+        }
     });
+}
+
+// --- LOOP ---
+function update() {
+    boss.time += 0.02 * phase;
+
+    ctx.clearRect(0,0,canvas.width,canvas.height);
+
+    drawBoss();
+    updateWeakPoints();
+    updateParticles();
+
+    requestAnimationFrame(update);
 }
 
 // --- RESIZE ---
@@ -276,7 +272,7 @@ window.addEventListener("resize", () => {
 // --- START ---
 updateUI();
 update();
-</script>
 
+</script>
 </body>
 </html>
